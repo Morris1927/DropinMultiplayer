@@ -1,8 +1,8 @@
 # DropinMultiplayer
 Drop in multiplayer mod for Risk of Rain 2, join your friends mid-game!
 Gives you items when you join late so you're not behind.
-spawnas command in the console (Ctrl+alt+`) lets you spawn as a new character
-  eg. Ctrl+alt+`
+spawnas command in the console (Ctrl+alt+\`) lets you spawn as a new character
+  eg. Ctrl+alt+\`
   eg. spawnas CommandoBody
   eg. spawnas LemurianBody
 Typing body_list into the console will give you a list of characters you can't turn into.
