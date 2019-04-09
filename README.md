@@ -12,3 +12,5 @@ First make sure you have Seiko's Mod Loader installed.
 Extract "Assembly-CSharp.DropinMultiplayer.mm.dll" from the zip file and place it into your "/Risk of Rain 2_Data/Managed" folder.
 Run _InstallModLoader.bat
 Play!
+
+!!! This is the source code, do not attempt to install these files directly as it will not work !!!
