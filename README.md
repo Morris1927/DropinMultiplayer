@@ -18,7 +18,7 @@
  3. Run _InstallModLoader.bat
  4. Play!
 
-#Notes
-1.1.0---
+# Notes
+### 1.1.0---
 * Fixed games not starting
 * Added ability to change other peoples character (Helps if someone else doesn't have the mod)
