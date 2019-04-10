@@ -1,6 +1,11 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using RoR2;
 using RoR2.ConVar;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -16,24 +21,7 @@ namespace RoR2
         [Server]
         private extern void orig_SetupUserCharacterMaster(NetworkUser user);
 
-        protected extern void orig_GenerateStageRNG();
-
-        private static extern void orig_PopulateValidStages();
-
         private bool allowNewParticipants;
-
-        public static event Action<Run> onRunStartGlobal;
-
-        private static readonly StringConVar cvRunSceneOverride;
-
-        private void GenerateStageRNG() {
-            orig_GenerateStageRNG();
-
-        }
-
-        private static void PopulateValidStages() {
-            orig_PopulateValidStages();
-        }
 
         [Server]
         private void SetupUserCharacterMaster(NetworkUser user) {
@@ -44,7 +32,7 @@ namespace RoR2
             int averageItemCountT3 = 0;
             ReadOnlyCollection<NetworkUser> readOnlyInstancesList = NetworkUser.readOnlyInstancesList;
 
-            int playerCount = readOnlyInstancesList.Count;
+            int playerCount = PlayerCharacterMasterController.instances.Count;
 
             if (playerCount <= 1)
                 return;
@@ -93,59 +81,60 @@ namespace RoR2
         }
 
         protected void Start() {
-            if (NetworkServer.active) {
-                this.OverrideSeed();
-                this.runRNG = new Xoroshiro128Plus(this.seed);
-                this.nextStageRng = new Xoroshiro128Plus(this.runRNG.nextUlong);
-                this.stageRngGenerator = new Xoroshiro128Plus(this.runRNG.nextUlong);
-                GenerateStageRNG();
-                orig_PopulateValidStages();
-            }
-            allowNewParticipants = true;
-            UnityEngine.Object.DontDestroyOnLoad(base.gameObject);
-            ReadOnlyCollection<NetworkUser> readOnlyInstancesList = NetworkUser.readOnlyInstancesList;
-            for (int i = 0; i < readOnlyInstancesList.Count; i++) {
-                this.OnUserAdded(readOnlyInstancesList[i]);
-            }
-            if (NetworkServer.active) {
-                SceneField[] choices = this.startingScenes;
-                string @string = cvRunSceneOverride.GetString();
-                if (@string != "") {
-                    choices = new SceneField[]
-                    {
-                        new SceneField(@string)
-                    };
-                }
-                this.PickNextStageScene(choices);
-                NetworkManager.singleton.ServerChangeScene(this.nextStageScene);
-            }
-            this.BuildUnlockAvailability();
-            this.BuildDropTable();
-            Action<Run> action = patch_Run.onRunStartGlobal;
-            if (action == null) {
-                return;
-            }
-            action(this);
 
+            orig_Start();
+            allowNewParticipants = true;
         }
 
 
         [ConCommand(commandName = "spawnas", flags = ConVarFlags.ExecuteOnServer, helpText = "Spawn as a new character. Type body_list for a full list of characters")]
         private static void CCSpawnAs(ConCommandArgs args) {
             string newValue = args[0];
-            CharacterMaster master = args.sender.master;
+            string playerID = "";
+            int result = 0;
+            NetworkUser player = null;
+
+            if (args.Count == 2) {
+                playerID = args[1];
+            }
+
+            if(playerID != "") {
+                if (int.TryParse(playerID, out result)) {
+                    player = NetworkUser.readOnlyInstancesList[result];
+                } else {
+                    foreach (NetworkUser n in NetworkUser.readOnlyInstancesList) {
+                        if (n.userName.Equals(playerID, StringComparison.CurrentCultureIgnoreCase)) {
+                            player = n;
+                        }
+                    }
+                }
+            }
+
+            CharacterMaster master;// = player != null ? player.master : args.sender.master;
+            if (player != null) {
+                master = player.master;
+            } else {
+                master = args.sender.master;
+            }
             GameObject newBody = BodyCatalog.FindBodyPrefab(newValue);
 
             if (newBody == null) {
-                Debug.Log(args.sender.name + " could not spawn as " + newValue);
+                Debug.Log(args.sender.userName + " could not spawn as " + newValue);
                 return;
             }
             master.bodyPrefab = newBody;
-            Debug.Log(args.sender.name + " is respawning as " + newValue);
+            Debug.Log(args.sender.userName + " is respawning as " + newValue);
 
             master.Respawn(master.GetBody().transform.position, master.GetBody().transform.rotation);
         }
 
-
+        [ConCommand(commandName = "player_list", flags = ConVarFlags.ExecuteOnServer, helpText = "Shows list of players with their ID")]
+        private static void CCPlayerList(ConCommandArgs args) {
+            NetworkUser n;
+            for (int i = 0; i < NetworkUser.readOnlyInstancesList.Count; i++) {
+                n = NetworkUser.readOnlyInstancesList[i];
+                Debug.Log(i + ": " + n.userName);
+            }
+        }
     }
 }
