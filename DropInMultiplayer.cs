@@ -9,6 +9,8 @@ using System.Linq;
 using System.Collections;
 using System.Reflection;
 using Mono.Cecil.Cil;
+using BepInEx.Configuration;
+using UnityEngine.Networking;
 
 namespace DropInMultiplayer
 {
@@ -16,18 +18,24 @@ namespace DropInMultiplayer
     [BepInPlugin("dev.morris1927.ror2.DropInMultiplayer", "DropInMultiplayer", "2.0.0")]
     public class DropInMultiplayer : BaseUnityPlugin {
 
+        private static ConfigWrapper<bool> StartWithItemsEnabled { get; set; }
+        public static ConfigWrapper<bool> SpawnAsEnabled { get; set; }
+        public static ConfigWrapper<bool> HostOnlySpawnAsEnabled { get; set; }
+
         public void Awake() {
+
+            StartWithItemsEnabled = Config.Wrap("Enable/Disable", "StartWithItems", "Enables or disables giving players items if they join mid-game", true);
+            SpawnAsEnabled = Config.Wrap("Enable/Disable", "SpawnAs", "Enables or disables the spawn_as command", true);
+            HostOnlySpawnAsEnabled = Config.Wrap("Enable/Disable", "HostOnlySpawnAs", "Changes the spawn_as command to be host only", false);
 
             On.RoR2.Console.Awake += (orig, self) => {
                 CommandHelper.RegisterCommands(self);
                 orig(self);
             };
 
-            IL.RoR2.Run.Start += il => {
-                var c = new ILCursor(il);
-                c.GotoNext(x => x.MatchStfld("RoR2.Run", "allowNewParticipants"));
-                c.GotoNext(x => x.MatchStfld("RoR2.Run", "allowNewParticipants"));
-                c.EmitDelegate<Func<bool, bool>>((b) => { return true; });
+            On.RoR2.Run.Start += (orig, self) => {
+                orig(self);
+                self.SetFieldValue("allowNewParticipants", true);
             };
 
             On.RoR2.Run.SetupUserCharacterMaster += SetupUserCharacterMaster;
@@ -35,33 +43,36 @@ namespace DropInMultiplayer
         }
 
         private string UserChatMessage_ConstructChatString(On.RoR2.Chat.UserChatMessage.orig_ConstructChatString orig, Chat.UserChatMessage self) {
+            
             List<string> split = new List<string>(self.text.Split(Char.Parse(" ")));
             string commandName = ArgsHelper.GetValue(split, 0);
-            split.RemoveAt(0);
+
             if (commandName.Equals("spawn_as", StringComparison.CurrentCultureIgnoreCase)) {
 
 
                 string bodyString = ArgsHelper.GetValue(split, 1);
                 string userString = ArgsHelper.GetValue(split, 2);
 
-                switch (split.Count) {
-                    case 2:
-                        bodyString = split[0];
-                        userString = split[1];
-                        break;
-                    case 1:
-                        bodyString = split[0];
-                        break;
-                    default:
-                        Debug.Log("Incorrect arguments");
-                        return orig(self);
-                }
-                SpawnAs(self.sender.GetComponent<NetworkUser>().master, bodyString, userString);
+
+                SpawnAs(self.sender.GetComponent<NetworkUser>(), bodyString, userString);
             }
             return orig(self);
         }
 
-        private static void SpawnAs(CharacterMaster sender, string bodyString, string userString) {
+        private static void SpawnAs(NetworkUser user, string bodyString, string userString) {
+
+            if (!SpawnAsEnabled.Value) {
+                return;
+            }
+
+            CharacterMaster sender = user.master;
+
+            if (HostOnlySpawnAsEnabled.Value) {
+                if (NetworkUser.readOnlyInstancesList[0].netId != user.netId) {
+                    return;
+                }
+            }
+
             bodyString = bodyString.Replace("Master", "");
             bodyString = bodyString.Replace("Body", "");
             bodyString = bodyString + "Body";
@@ -118,6 +129,9 @@ namespace DropInMultiplayer
 
         private void SetupUserCharacterMaster(On.RoR2.Run.orig_SetupUserCharacterMaster orig, Run self, NetworkUser user) {
             orig(self, user);
+            if (!StartWithItemsEnabled.Value || Run.instance.fixedTime < 30f) {
+                return;
+            }
 
             int averageItemCountT1 = 0;
             int averageItemCountT2 = 0;
@@ -184,7 +198,7 @@ namespace DropInMultiplayer
             string bodyString = ArgsHelper.GetValue(args.userArgs, 0);
             string playerString = ArgsHelper.GetValue(args.userArgs, 1);
 
-            SpawnAs(args.sender.master, bodyString, playerString);
+            SpawnAs(args.sender, bodyString, playerString);
             
         }
 
@@ -221,6 +235,10 @@ namespace DropInMultiplayer
                 var customAttributes = methodInfo.GetCustomAttributes(false);
                 foreach (var attribute in customAttributes.OfType<ConCommandAttribute>()) {
                     var conCommand = Reflection.GetNestedType<RoR2.Console>("ConCommand").Instantiate();
+
+                    if (!DropInMultiplayer.SpawnAsEnabled.Value && attribute.commandName.Equals("spawn_as", StringComparison.CurrentCultureIgnoreCase)) {
+                        return;
+                    }
 
                     conCommand.SetFieldValue("flags", attribute.flags);
                     conCommand.SetFieldValue("helpText", attribute.helpText);

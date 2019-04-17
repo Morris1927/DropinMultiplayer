@@ -19,9 +19,14 @@ You can specify which player gets transformed using their ID or name.
  2. Done
 
 # Notes
+### 2.0.2---
+* Added config options
+* Possibly(?) fixed a bug causing players to spawn with items they shouldn't have
+
 ### 2.0.1---
 * Updated to work with newest build
 * Changed spawnas to spawn_as
+
 ### 2.0.0---
 * Ported to BepInEx
 * Added in spawnas as a chat command
