@@ -36,13 +36,14 @@ namespace DropInMultiplayer
 
         private string UserChatMessage_ConstructChatString(On.RoR2.Chat.UserChatMessage.orig_ConstructChatString orig, Chat.UserChatMessage self) {
             List<string> split = new List<string>(self.text.Split(Char.Parse(" ")));
-            string commandName = split[0];
+            string commandName = ArgsHelper.GetValue(split, 0);
             split.RemoveAt(0);
-            if (commandName.Equals("spawnas", StringComparison.CurrentCultureIgnoreCase)) {
+            if (commandName.Equals("spawn_as", StringComparison.CurrentCultureIgnoreCase)) {
 
 
-                string bodyString = "";
-                string userString = "";
+                string bodyString = ArgsHelper.GetValue(split, 1);
+                string userString = ArgsHelper.GetValue(split, 2);
+
                 switch (split.Count) {
                     case 2:
                         bodyString = split[0];
@@ -60,39 +61,60 @@ namespace DropInMultiplayer
             return orig(self);
         }
 
-        private static void SpawnAs(CharacterMaster master, string bodyString, string userString) {
-            CharacterMaster masterToChange = GetMasterFromString(userString);
-            GameObject bodyPrefab = BodyCatalog.FindBodyPrefab(bodyString + "Body");
+        private static void SpawnAs(CharacterMaster sender, string bodyString, string userString) {
+            bodyString = bodyString.Replace("Master", "");
+            bodyString = bodyString.Replace("Body", "");
+            bodyString = bodyString + "Body";
 
-            if (bodyPrefab == null) {
+            NetworkUser player = GetNetUserFromString(userString);
+            CharacterMaster master = player != null ? player.master : sender;
+
+            if (!master.alive) {
+                Debug.Log("Player is dead and cannot respawn.");
                 return;
             }
 
+            GameObject bodyPrefab = BodyCatalog.FindBodyPrefab(bodyString);
 
-            if (masterToChange != null) {
-                masterToChange.bodyPrefab = bodyPrefab;
-                masterToChange.Respawn(masterToChange.GetBody().footPosition, masterToChange.GetBody().transform.rotation);
-            } else {
-                master.bodyPrefab = bodyPrefab;
-                master.Respawn(master.GetBody().footPosition, master.GetBody().transform.rotation);
+            if (bodyPrefab == null) {
+                List<string> array = new List<string>();
+                foreach (var item in BodyCatalog.allBodyPrefabs) {
+                    array.Add(item.name);
+                }
+                string list = string.Join("\n", array);
+                Debug.LogFormat("Could not spawn as {0}, Try: spawn_as GolemBody   --- \n{1}", bodyString, list);
+                return;
             }
+            master.bodyPrefab = bodyPrefab;
+            Debug.Log(master.GetBody().GetUserName() + " is spawning as " + bodyString);
 
+            master.Respawn(master.GetBody().transform.position, master.GetBody().transform.rotation);
         }
 
-        private static CharacterMaster GetMasterFromString(String userString) {
-            int playerID = 0;
-            if (int.TryParse(userString, out playerID)) {
-                return NetworkUser.readOnlyInstancesList[playerID].master;
-            } else {
-                foreach (NetworkUser user in NetworkUser.readOnlyInstancesList) {
-                    if (user.userName.Equals(userString, StringComparison.CurrentCultureIgnoreCase)) {
-                        return user.master;
+        private static NetworkUser GetNetUserFromString(string playerString) {
+            int result = 0;
+            if (playerString != "") {
+                if (int.TryParse(playerString, out result)) {
+                    if (result < NetworkUser.readOnlyInstancesList.Count && result >= 0) {
+
+                        return NetworkUser.readOnlyInstancesList[result];
                     }
+                    Debug.Log("Specified player index does not exist");
+                    return null;
+                } else {
+                    foreach (NetworkUser n in NetworkUser.readOnlyInstancesList) {
+                        if (n.userName.Equals(playerString, StringComparison.CurrentCultureIgnoreCase)) {
+                            return n;
+                        }
+                    }
+                    Debug.Log("Specified player does not exist");
+                    return null;
                 }
             }
+
             return null;
         }
-        
+
 
         private void SetupUserCharacterMaster(On.RoR2.Run.orig_SetupUserCharacterMaster orig, Run self, NetworkUser user) {
             orig(self, user);
@@ -152,25 +174,18 @@ namespace DropInMultiplayer
 
 
 
-        [ConCommand(commandName = "spawnas", flags = ConVarFlags.ExecuteOnServer, helpText = "Spawn as a new character. Type body_list for a full list of characters")]
+
+        [ConCommand(commandName = "spawn_as", flags = ConVarFlags.ExecuteOnServer, helpText = "Spawn as a new character. Type body_list for a full list of characters")]
         private static void CCSpawnAs(ConCommandArgs args) {
-            string bodyString = "";
-            string userString = "";
-
-            switch (args.Count) {
-                case 2:
-                    bodyString = args[0];
-                    userString = args[1];
-                    break;
-                case 1:
-                    bodyString = args[0];
-                    break;
-                default:
-                    Debug.Log("Incorrect arguments");
-                    return;
-
+            if (args.Count == 0) {
+                return;
             }
-            SpawnAs(args.sender.master, bodyString, userString);
+
+            string bodyString = ArgsHelper.GetValue(args.userArgs, 0);
+            string playerString = ArgsHelper.GetValue(args.userArgs, 1);
+
+            SpawnAs(args.sender.master, bodyString, playerString);
+            
         }
 
         [ConCommand(commandName = "player_list", flags = ConVarFlags.ExecuteOnServer, helpText = "Shows list of players with their ID")]
@@ -180,6 +195,18 @@ namespace DropInMultiplayer
                 n = NetworkUser.readOnlyInstancesList[i];
                 Debug.Log(i + ": " + n.userName);
             }
+        }
+    }
+
+
+    public class ArgsHelper {
+
+        public static string GetValue(List<string> args, int index) {
+            if (index < args.Count && index >= 0) {
+                return args[index];
+            }
+
+            return "";
         }
     }
 
